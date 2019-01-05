@@ -2,6 +2,10 @@
 #ifndef sodium_export_H
 #define sodium_export_H
 
+#include <stddef.h>
+#include <stdint.h>
+#include <limits.h>
+
 #if !defined(__clang__) && !defined(__GNUC__)
 # ifdef __attribute__
 #  undef __attribute__

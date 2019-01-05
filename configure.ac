@@ -1,5 +1,5 @@
 AC_PREREQ([2.65])
-AC_INIT([libsodium],[1.0.16],
+AC_INIT([libsodium],[1.0.17],
   [https://github.com/jedisct1/libsodium/issues],
   [libsodium],
   [https://github.com/jedisct1/libsodium])
@@ -13,13 +13,11 @@ AM_MAINTAINER_MODE
 AM_DEP_TRACK
 
 AC_SUBST(VERSION)
-ISODATE=`date +%Y-%m-%d`
-AC_SUBST(ISODATE)
 
 SODIUM_LIBRARY_VERSION_MAJOR=10
 SODIUM_LIBRARY_VERSION_MINOR=1
 DLL_VERSION=8
-SODIUM_LIBRARY_VERSION=24:0:1
+SODIUM_LIBRARY_VERSION=25:0:2
 #                       | | |
 #                +------+ | +---+
 #                |        |     |
@@ -61,7 +59,7 @@ AC_ARG_ENABLE(ssp,
 ])
 
 AC_ARG_ENABLE(asm,
-[AS_HELP_STRING(--disable-asm,Do not compile assembly code -- This disables all (including non-assembly) platform-specific optimizations on Unix systems)],
+[AS_HELP_STRING(--disable-asm,[Do not compile assembly code -- As a side effect, this disables CPU-specific implementations on non-Windows platforms. Only for use with targets such as WebAssembly and NativeClient.])],
 [
   AS_IF([test "x$enableval" = "xno"], [
     enable_asm="no"
@@ -148,6 +146,17 @@ AC_ARG_WITH(ctgrind,
 [AS_HELP_STRING(--with-ctgrind,For maintainers only - please do not use)],
 [AS_IF([test "x$withval" = "xyes"], [
     AC_CHECK_LIB(ctgrind, ct_poison)
+  ])
+])
+
+AC_ARG_ENABLE(retpoline,
+[AS_HELP_STRING(--enable-retpoline,Use return trampolines for indirect calls)],
+[AS_IF([test "x$enableval" = "xyes"], [
+  AX_CHECK_COMPILE_FLAG([-mindirect-branch=thunk-inline],
+    [CFLAGS="$CFLAGS -mindirect-branch=thunk-inline"],
+    [AX_CHECK_COMPILE_FLAG([-mretpoline], [CFLAGS="$CFLAGS -mretpoline"])]
+  )
+  AX_CHECK_COMPILE_FLAG([-mindirect-branch-register])
   ])
 ])
 
@@ -324,19 +333,6 @@ AX_CHECK_LINK_FLAG([-Wl,-z,relro], [LDFLAGS="$LDFLAGS -Wl,-z,relro"])
 AX_CHECK_LINK_FLAG([-Wl,-z,now], [LDFLAGS="$LDFLAGS -Wl,-z,now"])
 AX_CHECK_LINK_FLAG([-Wl,-z,noexecstack], [LDFLAGS="$LDFLAGS -Wl,-z,noexecstack"])
 
-AC_MSG_CHECKING(for a broken clang + AVX512 combination)
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[]], [[
-#if !(defined(__AVX512F__) && defined(__clang__) && __clang_major__ < 4)
-#error Not a broken clang + AVX512 combination
-#endif
-]])],
-  [AC_MSG_RESULT(yes - disabling AVX512 optimizations)
-   AX_CHECK_COMPILE_FLAG([$CFLAGS -mno-avx512f],
-     [CFLAGS="$CFLAGS -mno-avx512f"])
-  ],
-  [AC_MSG_RESULT(no)
-])
-
 AX_CHECK_CATCHABLE_SEGV
 AX_CHECK_CATCHABLE_ABRT
 
@@ -483,13 +479,29 @@ return _mm256_movemask_ps(_mm256_cmp_ps(x, y, _CMP_NEQ_OQ));
 #pragma GCC target("avx512f")
 #include <immintrin.h>
 ]], [[
+
+#ifndef __AVX512F__
+# error No AVX512 support
+#elif defined(__clang__)
+# if __clang_major__ < 4
+#  error Compiler AVX512 support may be broken
+# endif
+#elif defined(__GNUC__)
+# if __GNUC__ < 6
+#  error Compiler AVX512 support may be broken
+# endif
+#endif
+
 __m512i x = _mm512_setzero_epi32();
 __m512i y = _mm512_permutexvar_epi64(_mm512_setr_epi64(0, 1, 4, 5, 2, 3, 6, 7), x);
 ]])],
     [AC_MSG_RESULT(yes)
      AC_DEFINE([HAVE_AVX512FINTRIN_H], [1], [AVX512F is available])
      AX_CHECK_COMPILE_FLAG([-mavx512f], [CFLAGS_AVX512F="-mavx512f"])],
-    [AC_MSG_RESULT(no)])
+    [AC_MSG_RESULT(no)
+     AX_CHECK_COMPILE_FLAG([$CFLAGS -mno-avx512f],
+       [CFLAGS="$CFLAGS -mno-avx512f"])
+    ])
   CFLAGS="$oldcflags"
 
   oldcflags="$CFLAGS"
@@ -650,7 +662,7 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
 #if !defined(__clang__) && !defined(__GNUC__) && !defined(__SIZEOF_INT128__)
 # error mode(TI) is a gcc extension, and __int128 is not available
 #endif
-#if defined(__clang__) && !defined(__x86_64__) && !defined(__ARM_NEON)
+#if defined(__clang__) && !defined(__x86_64__) && !defined(__aarch64__)
 # error clang does not properly handle the 128-bit type on 32-bit systems
 #endif
 #ifndef NATIVE_LITTLE_ENDIAN
@@ -785,7 +797,7 @@ dnl Checks for functions and headers
 AC_FUNC_ALLOCA
 AS_IF([test "x$EMSCRIPTEN" = "x"],[
   AC_CHECK_FUNCS([arc4random arc4random_buf])
-  AC_CHECK_FUNCS([mmap mlock madvise mprotect memset_s explicit_bzero nanosleep])
+  AC_CHECK_FUNCS([mmap mlock madvise mprotect memset_s explicit_bzero explicit_memset nanosleep])
 ])
 AC_CHECK_FUNCS([posix_memalign getpid])
 
