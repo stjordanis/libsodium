@@ -15,7 +15,7 @@ AM_DEP_TRACK
 AC_SUBST(VERSION)
 
 SODIUM_LIBRARY_VERSION_MAJOR=10
-SODIUM_LIBRARY_VERSION_MINOR=1
+SODIUM_LIBRARY_VERSION_MINOR=2
 DLL_VERSION=8
 SODIUM_LIBRARY_VERSION=25:0:2
 #                       | | |
@@ -337,7 +337,9 @@ AX_CHECK_CATCHABLE_SEGV
 AX_CHECK_CATCHABLE_ABRT
 
 AS_IF([test "x$with_threads" = "xyes"], [
-  AX_TLS([AC_MSG_RESULT(thread local storage is supported)],
+  AX_TLS([AC_MSG_RESULT(thread local storage is supported)
+          AX_CHECK_COMPILE_FLAG([-ftls-model=local-dynamic],
+            [CFLAGS="$CFLAGS -ftls-model=local-dynamic"])],
          [AC_MSG_RESULT(thread local storage is not supported)]) ])
 
 LT_INIT
